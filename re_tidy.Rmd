@@ -1,0 +1,8 @@
+---
+title: "re_tidy"
+output: html_document
+date: "2025-03-02"
+---
+raw_data <- readr::read_csv("./1249534s1-s6_dataS1.csv")
+raw_data
+
