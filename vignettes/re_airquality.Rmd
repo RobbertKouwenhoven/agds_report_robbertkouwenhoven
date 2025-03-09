@@ -1,0 +1,71 @@
+library(ggplot2)
+library(plotly)
+datasets::airquality
+
+ggplot(airquality, aes(x = as.Date(paste(1973, Month, Day, sep = "-")), y = Ozone)) +
+  geom_line(color = "blue") +
+  labs(title = "Ozone Concentration Over Time",
+       x = "Date", y = "Ozone (ppb)") +
+  theme_minimal()
+
+ggplot(airquality, aes(x = Temp, y = Ozone)) +
+  geom_point(color = "red", alpha = 0.6) +
+  labs(title = "Temperature vs. Ozone Concentration",
+       x = "Temperature (°F)", y = "Ozone (ppb)") +
+  theme_minimal()
+
+ggplot(airquality, aes(x = factor(Month), y = Ozone)) +
+  geom_boxplot() +
+  labs(title = "Ozone Concentration by Month",
+       x = "Month", y = "Ozone (ppb)") +
+  theme_minimal()
+
+# Faceted plot to visualize how temperature and solar radiation vary by month, and how ozone is related to these variables
+ggplot(airquality, aes(x = Temp, y = Ozone, color = Solar.R)) +
+  geom_point(alpha = 0.6) +
+  facet_wrap(~ Month) +
+  labs(title = "Ozone vs Temperature and Solar Radiation by Month",
+       x = "Temperature (°F)", y = "Ozone (ppb)",
+       color = "Solar Radiation (watt/m²)") +
+  theme_minimal()
+
+plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R, 
+        type = "scatter3d", mode = "markers", color = ~Month,
+        colors = colorRamp(c('blue', 'red'))) %>%
+  layout(title = "3D Scatter Plot of Ozone, Temperature, and Solar Radiation",
+         scene = list(xaxis = list(title = 'Temperature (°F)'),
+                      yaxis = list(title = 'Ozone (ppb)'),
+                      zaxis = list(title = 'Solar Radiation (watt/m²)')))
+
+#Linear regression
+# Model 1: Ozone vs Temperature
+model_temp <- lm(Ozone ~ Temp, data = airquality)
+
+# Model 2: Ozone vs Solar Radiation
+model_solar <- lm(Ozone ~ Solar.R, data = airquality)
+
+# Model 3: Ozone vs Temperature and Solar Radiation
+model_combined <- lm(Ozone ~ Temp + Solar.R, data = airquality)
+
+# Summarizing the models
+summary(model_temp)
+summary(model_solar)
+summary(model_combined)
+
+# Extracting R-squared values and AIC
+rsq_temp <- summary(model_temp)$r.squared
+rsq_solar <- summary(model_solar)$r.squared
+rsq_combined <- summary(model_combined)$r.squared
+
+aic_temp <- AIC(model_temp)
+aic_solar <- AIC(model_solar)
+aic_combined <- AIC(model_combined)
+
+# Create a summary table
+model_comparison <- data.frame(
+  Model = c("Ozone ~ Temp", "Ozone ~ Solar.R", "Ozone ~ Temp + Solar.R"),
+  R_squared = c(rsq_temp, rsq_solar, rsq_combined),
+  AIC = c(aic_temp, aic_solar, aic_combined)
+)
+
+print(model_comparison)
