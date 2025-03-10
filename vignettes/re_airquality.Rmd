@@ -1,34 +1,19 @@
 library(ggplot2)
 library(plotly)
+library(viridis)
+library(kableExtra)
+library(dplyr)
 datasets::airquality
 
-ggplot(airquality, aes(x = as.Date(paste(1973, Month, Day, sep = "-")), y = Ozone)) +
-  geom_line(color = "blue") +
-  labs(title = "Ozone Concentration Over Time",
-       x = "Date", y = "Ozone (ppb)") +
-  theme_minimal()
+?airquality
+'''
+airquality is a dataset containing daily air quality measurements in New York from May to September of 1973. The dataset contains the day of the month, the month, the temperature (in degrees Fahrenheit), wind speed (miles per hour), solar radiation (Langleys) and ozone concentration (ppb).
+The ozone data is obtained from the New York state department of conservation and the meteorological data comes from the National Weather service. 
 
-ggplot(airquality, aes(x = Temp, y = Ozone)) +
-  geom_point(color = "red", alpha = 0.6) +
-  labs(title = "Temperature vs. Ozone Concentration",
-       x = "Temperature (°F)", y = "Ozone (ppb)") +
-  theme_minimal()
+Upon first inspection of the data - see the 3D scatter plot - I'm interested in figuring out to what extent the ozone concentration can be explained by variations in both temperature and solar radiation. 
+'''
 
-ggplot(airquality, aes(x = factor(Month), y = Ozone)) +
-  geom_boxplot() +
-  labs(title = "Ozone Concentration by Month",
-       x = "Month", y = "Ozone (ppb)") +
-  theme_minimal()
-
-# Faceted plot to visualize how temperature and solar radiation vary by month, and how ozone is related to these variables
-ggplot(airquality, aes(x = Temp, y = Ozone, color = Solar.R)) +
-  geom_point(alpha = 0.6) +
-  facet_wrap(~ Month) +
-  labs(title = "Ozone vs Temperature and Solar Radiation by Month",
-       x = "Temperature (°F)", y = "Ozone (ppb)",
-       color = "Solar Radiation (watt/m²)") +
-  theme_minimal()
-
+# Plot 1 - 3D plot containing temperature, ozone, solar radiation and the months
 plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R, 
         type = "scatter3d", mode = "markers", color = ~Month,
         colors = colorRamp(c('blue', 'red'))) %>%
@@ -37,13 +22,13 @@ plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R,
                       yaxis = list(title = 'Ozone (ppb)'),
                       zaxis = list(title = 'Solar Radiation (watt/m²)')))
 
+'''This plot is purely used to inspect the data. Obviously, lower temperatures tend to respond to days earlier in the season. In general, it looks like the higher the solar radiation and the higher the temperature, the higher the ozone concentration.'''
+
 #Linear regression
 # Model 1: Ozone vs Temperature
 model_temp <- lm(Ozone ~ Temp, data = airquality)
-
 # Model 2: Ozone vs Solar Radiation
 model_solar <- lm(Ozone ~ Solar.R, data = airquality)
-
 # Model 3: Ozone vs Temperature and Solar Radiation
 model_combined <- lm(Ozone ~ Temp + Solar.R, data = airquality)
 
@@ -56,7 +41,6 @@ summary(model_combined)
 rsq_temp <- summary(model_temp)$r.squared
 rsq_solar <- summary(model_solar)$r.squared
 rsq_combined <- summary(model_combined)$r.squared
-
 aic_temp <- AIC(model_temp)
 aic_solar <- AIC(model_solar)
 aic_combined <- AIC(model_combined)
@@ -68,4 +52,57 @@ model_comparison <- data.frame(
   AIC = c(aic_temp, aic_solar, aic_combined)
 )
 
+# Plot 2 + 3 
+ggplot(airquality, aes(x = Solar.R, y = Ozone, color = Month)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  scale_color_viridis_c(option = "C", name = "Month") +
+  labs(title = "Solar Radiation vs. Ozone Concentration by Month (with Regression)",
+       x = "Solar Radiation (Langleys)", y = "Ozone (ppb)") +
+  theme_minimal()
+
+ggplot(airquality, aes(x = Temp, y = Ozone)) +
+  geom_point(color = "red", alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(title = "Temperature vs. Ozone Concentration (with Regression)",
+       x = "Temperature (°F)", y = "Ozone (ppb)") +
+  theme_minimal()
+
+'''These plots all show some form of correlation between the variables of interest. The solar radiation vs ozone concentration by month shows that although a high solar radiation does not necessarily mean a high ozone concentration, all high ozone concentrations do have a high(er) solar radiation. The temperature vs ozone concentration shows - apart from some high ozone outliers - a rather linear trend: the higher the temperature, the higher the ozone concentration. This makes the linear regression interesting. '''
+
+# Plot 4 - visualization of model 3 (ozone ~ radiation + temperature)
+# Prepare data grid for predictions
+new_data <- expand.grid(
+  Temp = seq(min(airquality$Temp, na.rm = TRUE), max(airquality$Temp, na.rm = TRUE), length.out = 100),
+  Solar.R = seq(min(airquality$Solar.R, na.rm = TRUE), max(airquality$Solar.R, na.rm = TRUE), length.out = 100)
+)
+
+# Predict Ozone based on the combined model
+new_data$Ozone_Pred <- predict(model_combined, newdata = new_data)
+
+# Plotting the contour with observed data points
+# Combine predicted and observed ozone values for a unified color scale
+ozone_range <- range(c(new_data$Ozone_Pred, airquality$Ozone), na.rm = TRUE)
+
+ggplot() +
+  # Contour of predicted ozone
+  geom_tile(data = new_data, aes(x = Temp, y = Solar.R, fill = Ozone_Pred)) +
+  geom_contour(data = new_data, aes(x = Temp, y = Solar.R, z = Ozone_Pred), color = "white") +
+  # Observed data points with black border
+  geom_point(data = airquality, aes(x = Temp, y = Solar.R, fill = Ozone), 
+             shape = 21, color = "black", size = 4, stroke = 0.5, alpha = 0.8) +
+  # Unified color scale for both predicted and observed ozone
+  scale_fill_viridis_c(name = "Ozone (ppb)", limits = ozone_range, option = "C") +
+  # Labels and theme
+  labs(
+    title = "Observed vs. Predicted Ozone Concentration",
+    x = "Temperature (°F)",
+    y = "Solar Radiation (Langleys)"
+  ) +
+  theme_minimal()
+
 print(model_comparison)
+
+# Print table nicely in RMarkdown
+kable(model_comparison, format = "html", caption = "Model Comparison Table") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
