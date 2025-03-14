@@ -24,6 +24,10 @@ plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R,
 
 '''This plot is purely used to inspect the data. Obviously, lower temperatures tend to respond to days earlier in the season. In general, it looks like the higher the solar radiation and the higher the temperature, the higher the ozone concentration.'''
 
+# Clean the dataset
+airquality <- airquality %>% 
+  filter(!is.na(Ozone) & !is.na(Temp))
+
 #Linear regression
 # Model 1: Ozone vs Temperature
 model_temp <- lm(Ozone ~ Temp, data = airquality)
@@ -61,10 +65,22 @@ ggplot(airquality, aes(x = Solar.R, y = Ozone, color = Month)) +
        x = "Solar Radiation (Langleys)", y = "Ozone (ppb)") +
   theme_minimal()
 
-ggplot(airquality, aes(x = Temp, y = Ozone)) +
-  geom_point(color = "red", alpha = 0.6) +
+# Add residuals and identify outliers for the temp vs ozone plot
+airquality_outliers <- airquality %>%
+  mutate(
+    Residuals = resid(model_temp),
+    Std_Residuals = rstandard(model_temp),
+    Outlier = abs(Std_Residuals) > 2
+  )
+
+# Plot with outliers highlighted
+ggplot(airquality_outliers, aes(x = Temp, y = Ozone)) +
+  # Regular points
+  geom_point(data = subset(airquality_outliers, !Outlier), color = "blue", alpha = 0.6) +
+  geom_point(data = subset(airquality_outliers, Outlier), color = "red", alpha = 0.6) +
+  # Regression line
   geom_smooth(method = "lm", se = FALSE, color = "black") +
-  labs(title = "Temperature vs. Ozone Concentration (with Regression)",
+  labs(title = "Temperature vs. Ozone Concentration (with Regression and Outliers)",
        x = "Temperature (°F)", y = "Ozone (ppb)") +
   theme_minimal()
 
@@ -90,7 +106,7 @@ ggplot() +
   geom_contour(data = new_data, aes(x = Temp, y = Solar.R, z = Ozone_Pred), color = "white") +
   # Observed data points with black border
   geom_point(data = airquality, aes(x = Temp, y = Solar.R, fill = Ozone), 
-             shape = 21, color = "black", size = 4, stroke = 0.5, alpha = 0.8) +
+             shape = 21, color = "black", size = 3, stroke = 1, alpha = 0.8) +
   # Unified color scale for both predicted and observed ozone
   scale_fill_viridis_c(name = "Ozone (ppb)", limits = ozone_range, option = "C") +
   # Labels and theme
@@ -101,8 +117,13 @@ ggplot() +
   ) +
   theme_minimal()
 
+'''
+From this plot you can see that for low ozone concentrations, the model performs not too bad. However, for higher ozone concentrations, the model severely underestimates the ozone concentration, as the dotted observations are much brighter than the modelled background color. Also, the highest observed ozone concentrations don't show up in the most upper right corner.
+'''
+
 print(model_comparison)
 
 # Print table nicely in RMarkdown
 kable(model_comparison, format = "html", caption = "Model Comparison Table") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
