@@ -395,5 +395,188 @@ ggplot(co2_timeseries, aes(x = Date)) +
     caption = "Blue: Monthly CO2, Red: 12-Month Running Mean"
   ) +
   theme_minimal()
-  
-  
+
+# Chapter 6 - data variety
+library(readr)
+library(jsonlite)
+library(dplyr)
+library(raster)
+library("terra")
+library(hwsdr)
+library(terra)
+
+# exercise 1 - files and file formats
+url1 <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/demo_1.csv"
+url2 <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/demo_2.csv"
+url3 <- "https://raw.githubusercontent.com/geco-bern/agds_book/refs/heads/main/book/data/demo_3.csv"
+
+data1 <- read_csv(url1)
+data2 <- read_csv(url2)
+data3 <- read_csv(url3)
+
+# Combine the data into one data frame
+combined_data <- bind_rows(data1, data2, data3)
+
+# Save the combined data as a temporary CSV file
+temp_csv <- tempfile(fileext = ".csv")
+write_csv(combined_data, temp_csv)
+
+# Read the temporary CSV file back in
+read_combined_data <- read_csv(temp_csv)
+json_file <- "combined_data.json" # Save the data as a JSON file
+write_json(read_combined_data, json_file)
+
+# Print the path of the saved JSON file
+cat("JSON file saved as:", json_file, "\n")
+# Read the JSON file
+json_data <- fromJSON("combined_data.json")
+
+# Inspect the JSON data
+print(json_data)  
+
+# Exercise 2 - binary files
+# This is a netCDF file, which can be opened easiest with the ncdf4 library
+# This file contains temperature 2 meters above the surface.
+library(ncdf4)
+
+nc_file <- nc_open("./demo_data.nc")
+print(nc_file)
+
+# Close the file after inspecting
+nc_close(nc_file)
+
+# Read the NetCDF file as a Raster object
+raster_data <- raster("./demo_data.nc")
+
+# Write the raster data to a GeoTIFF file
+writeRaster(raster_data, "demo_data.tif", format = "GTiff") 
+
+# load the geoTIFF file
+raster_data_tif <- raster("./demo_data.tif")
+# Inspect the data
+print(raster_data_tif)
+
+# Plot the data
+plot(raster_data_tif)  
+# yes! from the plot I can recognize the alps and the beginning of Italy's boot!
+
+# Exercise 3 - GET
+# Set API URL endpoint for the total sand content
+url <- "https://thredds.daac.ornl.gov/thredds/ncss/ornldaac/1247/T_SAND.nc4"
+
+# Formulate the query to pass to httr for Switzerland's extent
+query <- list(
+  "var" = "T_SAND",
+  "south" = 45.8,  # South latitude for Switzerland
+  "west" = 5.9,    # West longitude for Switzerland
+  "east" = 10.5,   # East longitude for Switzerland
+  "north" = 47.8,  # North latitude for Switzerland
+  "disableProjSubset" = "on",
+  "horizStride" = 1,
+  "accept" = "netcdf4"
+)
+
+# Download data using the API endpoint and query data
+status <- httr::GET(
+  url = url,
+  query = query,
+  httr::write_disk(
+    path = file.path(tempdir(), "T_SAND_Switzerland.nc"),
+    overwrite = TRUE
+  )
+)
+
+sand <- terra::rast(file.path(tempdir(), "T_SAND_Switzerland.nc"))
+terra::plot(sand) 
+
+# And now let's do the same thing for silt:
+url <- "https://thredds.daac.ornl.gov/thredds/ncss/ornldaac/1247/T_SILT.nc4"
+
+# Formulate the query for topsoil silt content within Switzerland's extent
+query <- list(
+  "var" = "T_SILT",
+  "south" = 45.8,  # South latitude for Switzerland
+  "west" = 5.9,    # West longitude for Switzerland
+  "east" = 10.5,   # East longitude for Switzerland
+  "north" = 47.8,  # North latitude for Switzerland
+  "disableProjSubset" = "on",
+  "horizStride" = 1,
+  "accept" = "netcdf4"
+)
+
+# Download data using the API endpoint and query data
+status <- httr::GET(
+  url = url,
+  query = query,
+  httr::write_disk(
+    path = file.path(tempdir(), "T_SILT_Switzerland.nc"),
+    overwrite = TRUE
+  )
+)
+
+# Load and visualize the data
+silt <- terra::rast(file.path(tempdir(), "T_SILT_Switzerland.nc"))
+terra::plot(silt)
+
+## Download the same data using {hwsdr} library
+ls("package:hwsdr")
+
+hwsd_meta_data
+
+?ws_download
+
+# Download the database (this will save it to the default temp directory)
+hwsd_path <- ws_download(ws_path = tempdir(), verbose = TRUE)
+
+# Print the path to confirm the file location
+print(hwsd_path)
+
+# List files in the temp directory
+list.files(tempdir())
+
+#debugging
+file.info(file.path(tempdir(), "T_SAND_Switzerland.nc"))
+sand_raster <- try(rast(file.path(tempdir(), "T_SAND_Switzerland.nc")), silent = TRUE)
+
+if (inherits(sand_raster, "try-error")) {
+  print("Error: Unable to open T_SAND_Switzerland.nc either.")
+} else {
+  plot(sand_raster)
+}
+
+# MODIS
+library(MODISTools)
+
+# Get the list of available MODIS data products
+products <- mt_products()
+
+# Count the number of available products
+num_products <- nrow(products)
+print(paste("Number of available MODIS data products:", num_products))
+
+# Print the first few rows to see what's available
+head(products)
+
+# Canton of Bern land cover
+# Define the MODIS product for land cover classification
+product <- "MCD12Q1"  # MODIS Land Cover Type
+
+# Central coordinate for the canton of Bern
+lat_central <- 46.95
+lon_central <- 7.45
+
+# Download MODIS land cover data for the canton of Bern
+bern_landcover <- mt_subset(
+  product = product,
+  lat = lat_central,  # Single central latitude
+  lon = lon_central,  # Single central longitude
+  band = "LC_Type1",  # Land cover classification
+  site_name = "Bern",
+  km_lr = 75,  # Covers ~150 km horizontally
+  km_ab = 100,  # Covers ~200 km vertically
+  internal = TRUE
+)
+
+# View first rows of data
+head(bern_landcover)
+
