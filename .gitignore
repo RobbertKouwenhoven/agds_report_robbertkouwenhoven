@@ -47,3 +47,8 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Ignore personal exercises and reproducible project directories
+Personal exercises/
+reproducible_project/
+example project AGDS/
