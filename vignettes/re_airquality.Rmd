@@ -1,3 +1,15 @@
+---
+title: "re_airquality"
+author: "Robbert Kouwenhoven"
+date: "2025-04-02"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r loading the needed packages + inspecting data}
 library(ggplot2)
 library(plotly)
 library(viridis)
@@ -6,14 +18,17 @@ library(dplyr)
 datasets::airquality
 
 ?airquality
-'''
+
+```
+
 airquality is a dataset containing daily air quality measurements in New York from May to September of 1973. The dataset contains the day of the month, the month, the temperature (in degrees Fahrenheit), wind speed (miles per hour), solar radiation (Langleys) and ozone concentration (ppb).
 The ozone data is obtained from the New York state department of conservation and the meteorological data comes from the National Weather service. 
 
 Upon first inspection of the data - see the 3D scatter plot - I'm interested in figuring out to what extent the ozone concentration can be explained by variations in both temperature and solar radiation. 
-'''
+
 
 # Plot 1 - 3D plot containing temperature, ozone, solar radiation and the months
+```{r Plot 1}
 plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R, 
         type = "scatter3d", mode = "markers", color = ~Month,
         colors = colorRamp(c('blue', 'red'))) %>%
@@ -22,8 +37,11 @@ plot_ly(airquality, x = ~Temp, y = ~Ozone, z = ~Solar.R,
                       yaxis = list(title = 'Ozone (ppb)'),
                       zaxis = list(title = 'Solar Radiation (watt/m²)')))
 
-'''This plot is purely used to inspect the data. Obviously, lower temperatures tend to respond to days earlier in the season. In general, it looks like the higher the solar radiation and the higher the temperature, the higher the ozone concentration.'''
+```
 
+This plot is purely used to inspect the data. Obviously, lower temperatures tend to respond to days earlier in the season. In general, it looks like the higher the solar radiation and the higher the temperature, the higher the ozone concentration.
+
+```{r Linear regression + plot 2 and 3}
 # Clean the dataset
 airquality <- airquality %>% 
   filter(!is.na(Ozone) & !is.na(Temp))
@@ -83,10 +101,11 @@ ggplot(airquality_outliers, aes(x = Temp, y = Ozone)) +
   labs(title = "Temperature vs. Ozone Concentration (with Regression and Outliers)",
        x = "Temperature (°F)", y = "Ozone (ppb)") +
   theme_minimal()
+```
 
-'''These plots all show some form of correlation between the variables of interest. The solar radiation vs ozone concentration by month shows that although a high solar radiation does not necessarily mean a high ozone concentration, all high ozone concentrations do have a high(er) solar radiation. The temperature vs ozone concentration shows - apart from some high ozone outliers - a rather linear trend: the higher the temperature, the higher the ozone concentration. This makes the linear regression interesting. '''
+These plots all show some form of correlation between the variables of interest. The solar radiation vs ozone concentration by month shows that although a high solar radiation does not necessarily mean a high ozone concentration, all high ozone concentrations do have a high(er) solar radiation. The temperature vs ozone concentration shows - apart from some high ozone outliers - a rather linear trend: the higher the temperature, the higher the ozone concentration. This makes the linear regression interesting.
 
-# Plot 4 - visualization of model 3 (ozone ~ radiation + temperature)
+```{r Plot 4 - visualization of model 3 (ozone ~ radiation + temperature)}
 # Prepare data grid for predictions
 new_data <- expand.grid(
   Temp = seq(min(airquality$Temp, na.rm = TRUE), max(airquality$Temp, na.rm = TRUE), length.out = 100),
@@ -117,13 +136,12 @@ ggplot() +
   ) +
   theme_minimal()
 
-'''
-From this plot you can see that for low ozone concentrations, the model performs not too bad. However, for higher ozone concentrations, the model severely underestimates the ozone concentration, as the dotted observations are much brighter than the modelled background color. Also, the highest observed ozone concentrations don't show up in the most upper right corner.
-'''
-
 print(model_comparison)
+```
 
-# Print table nicely in RMarkdown
+From this plot you can see that for low ozone concentrations, the model performs not too bad. However, for higher ozone concentrations, the model severely underestimates the ozone concentration, as the dotted observations are much brighter than the modelled background color. Also, the highest observed ozone concentrations don't show up in the most upper right corner.
+
+```{r Print table nicely in RMarkdown}
 kable(model_comparison, format = "html", caption = "Model Comparison Table") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
-
+```

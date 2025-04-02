@@ -9,9 +9,11 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
+<meta name="author" content="Robbert Kouwenhoven" />
 
+<meta name="date" content="2025-04-02" />
 
-<title>re_tidy.knit</title>
+<title>re_tidy</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -348,75 +350,114 @@ display: none;
 
 
 
+<h1 class="title toc-ignore">re_tidy</h1>
+<h4 class="author">Robbert Kouwenhoven</h4>
+<h4 class="date">2025-04-02</h4>
 
 </div>
 
 
-<div id="import-libraries" class="section level1">
-<h1>import libraries</h1>
-<p>library(tidyverse) library(dplyr)</p>
-</div>
-<div id="import-raw-data" class="section level1">
-<h1>import raw data</h1>
-<p>raw_data &lt;-
-readr::read_csv(“./1249534s1-s6_dataS1.csv”,skip=3)</p>
-</div>
-<div id="clean-data-fill-the-experiment-column-with-experiment-names" class="section level1">
-<h1>Clean data: fill the experiment column with experiment names</h1>
-<p>cleaned_data &lt;- raw_data %&gt;% fill(Experiment, .direction =
-“down”)</p>
-</div>
-<div id="add-a-column-with-the-log-response-ratio-lrr" class="section level1">
-<h1>Add a column with the log response ratio (LRR)</h1>
-<p>cleaned_data &lt;- cleaned_data %&gt;% mutate(LRR =
-log(<code>increased CO2...9</code> / <code>ambient CO2...8</code>))</p>
-<p>cleaned_data[‘LRR’]</p>
-</div>
-<div id="compute-the-means-of-lrr-for-each-phase" class="section level1">
-<h1>Compute the means of LRR for each phase</h1>
-<p>agg_data_by_phase &lt;- cleaned_data %&gt;% mutate(phase = case_when(
-<code>Time (years)</code> &lt; 3 ~ “Early”, <code>Time (years)</code>
-&gt;= 3 &amp; <code>Time (years)</code> &lt;= 6 ~ “Mid”,
-<code>Time (years)</code> &gt; 6 ~ “Late” )) %&gt;% group_by(phase)
-%&gt;% summarise(mean_LRR = mean(LRR, na.rm = TRUE)) %&gt;% drop_na()
-%&gt;% # Remove NaN rows mutate(phase = factor(phase, levels =
-c(“Early”, “Mid”, “Late”))) %&gt;% arrange(phase) # Ensure correct
-sorting</p>
-</div>
-<div id="show-results-as-a-table" class="section level1">
-<h1>Show results as a table</h1>
-<p>knitr::kable(agg_data_by_phase)</p>
-</div>
-<div id="answers-to-the-exercises" class="section level1">
-<h1>Answers to the exercises:</h1>
-</div>
-<div id="what-are-the-data-that-you-are-looking-at" class="section level1">
-<h1>- What are the data that you are looking at?</h1>
-</div>
-<div id="we-are-looking-at-som-data-for-different-experiments-with-both-ambient-and-enhanced-co2-conditions.-soc-is-measured-at-different-time-points.-some-experiments-have-additional-variables-like-n-limitation." class="section level1">
-<h1>We are looking at SOM data for different experiments, with both
-ambient and enhanced CO2 conditions. SOC is measured at different time
-points. Some experiments have additional variables, like
-N-limitation.</h1>
-</div>
-<div id="what-do-you-expect-your-analysis-to-show-what-is-your-hypothesis-how-should-soil-organic-matter-content-change-under-elevated-co2" class="section level1">
-<h1>- What do you expect your analysis to show, what is your hypothesis?
-How should soil organic matter content change under elevated CO2?</h1>
-</div>
-<div id="the-idea-of-co2-fertilization-could-hypothesize-that-elevated-co2-increases-soc-content-due-to-enhanced-plant-productivity-and-root-biomass-leading-to-higher-soil-carbon-inputs.-alternatively-decomposition-rates-might-counteract-this-resulting-in-no-significant-or-even-negative-changes." class="section level1">
-<h1>The idea of CO2 fertilization could hypothesize that elevated CO2
+<pre class="r"><code>library(tidyverse)</code></pre>
+<pre><code>## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+## ✔ dplyr     1.1.4     ✔ readr     2.1.5
+## ✔ forcats   1.0.0     ✔ stringr   1.5.1
+## ✔ ggplot2   3.5.1     ✔ tibble    3.2.1
+## ✔ lubridate 1.9.4     ✔ tidyr     1.3.1
+## ✔ purrr     1.0.4     
+## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+## ✖ dplyr::filter() masks stats::filter()
+## ✖ dplyr::lag()    masks stats::lag()
+## ℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors</code></pre>
+<pre class="r"><code>library(dplyr)</code></pre>
+<pre class="r"><code># import raw data
+raw_data &lt;- readr::read_csv(&quot;../raw_data/1249534s1-s6_dataS1.csv&quot;, skip=3)</code></pre>
+<pre><code>## New names:
+## Rows: 287 Columns: 13
+## ── Column specification
+## ──────────────────────────────────────────────────────── Delimiter: &quot;,&quot; chr
+## (6): Experiment, Citation, Sample year, Time (years), Description of dat... dbl
+## (5): Depth min (cm), Depth max (cm), sample month, ambient CO2...10, inc... num
+## (2): ambient CO2...8, increased CO2...9
+## ℹ Use `spec()` to retrieve the full column specification for this data. ℹ
+## Specify the column types or set `show_col_types = FALSE` to quiet this message.
+## • `ambient CO2` -&gt; `ambient CO2...8`
+## • `increased CO2` -&gt; `increased CO2...9`
+## • `ambient CO2` -&gt; `ambient CO2...10`
+## • `increased CO2` -&gt; `increased CO2...11`</code></pre>
+<pre class="r"><code># Clean data: fill the experiment column with experiment names
+cleaned_data &lt;- raw_data %&gt;%
+  fill(Experiment, .direction = &quot;down&quot;)
+
+# Add a column with the log response ratio (LRR)
+cleaned_data &lt;- cleaned_data %&gt;%
+  mutate(LRR = log(`increased CO2...9` / `ambient CO2...8`))
+
+cleaned_data[&#39;LRR&#39;]</code></pre>
+<pre><code>## # A tibble: 287 × 1
+##         LRR
+##       &lt;dbl&gt;
+##  1 NA      
+##  2 -0.0903 
+##  3 -0.0435 
+##  4  0.00794
+##  5  0.107  
+##  6 NA      
+##  7  0.0670 
+##  8 -0.104  
+##  9 -0.240  
+## 10 -0.297  
+## # ℹ 277 more rows</code></pre>
+<pre class="r"><code># Compute the means of LRR for each phase
+agg_data_by_phase &lt;- cleaned_data %&gt;%
+  mutate(phase = case_when(
+    `Time (years)` &lt; 3 ~ &quot;Early&quot;,
+    `Time (years)` &gt;= 3 &amp; `Time (years)` &lt;= 6 ~ &quot;Mid&quot;,
+    `Time (years)` &gt; 6 ~ &quot;Late&quot;
+  )) %&gt;%
+  group_by(phase) %&gt;%
+  summarise(mean_LRR = mean(LRR, na.rm = TRUE)) %&gt;%
+  drop_na() %&gt;%  # Remove NaN rows
+  mutate(phase = factor(phase, levels = c(&quot;Early&quot;, &quot;Mid&quot;, &quot;Late&quot;))) %&gt;%
+  arrange(phase)  # Ensure correct sorting</code></pre>
+<pre class="r"><code>knitr::kable(agg_data_by_phase)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">phase</th>
+<th align="right">mean_LRR</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Early</td>
+<td align="right">0.0018231</td>
+</tr>
+<tr class="even">
+<td align="left">Mid</td>
+<td align="right">0.0249316</td>
+</tr>
+<tr class="odd">
+<td align="left">Late</td>
+<td align="right">-0.0213542</td>
+</tr>
+</tbody>
+</table>
+<p>Answers to the exercises:</p>
+<ul>
+<li><p>What are the data that you are looking at? We are looking at SOM
+data for different experiments, with both ambient and enhanced CO2
+conditions. SOC is measured at different time points. Some experiments
+have additional variables, like N-limitation.</p></li>
+<li><p>What do you expect your analysis to show, what is your
+hypothesis? How should soil organic matter content change under elevated
+CO2? The idea of CO2 fertilization could hypothesize that elevated CO2
 increases SOC content due to enhanced plant productivity and root
 biomass, leading to higher soil carbon inputs. Alternatively,
 decomposition rates might counteract this, resulting in no significant
-or even negative changes.</h1>
-</div>
-<div id="interpret-your-results-after-aggregating-the-data-what-do-your-final-numbers-mean-do-they-support-your-initial-hypothesis-why-so-why-not" class="section level1">
-<h1>- Interpret your results after aggregating the data: What do your
+or even negative changes.</p></li>
+<li><p>Interpret your results after aggregating the data: What do your
 final numbers mean? Do they support your initial hypothesis? Why so, why
-not?</h1>
-</div>
-<div id="the-early-phase-shows-almost-no-effect.-this-is-quite-expected-as-it-takes-time-for-a-soil-to-adjust-to-new-conditions.-therefore-the-mid-phase-proved-the-hypothesis-there-is-a-positive-mean-lrr-meaning-that-the-enhanced-co2-setup-has-a-higher-soc-content-than-the-ambient-conditions.-the-late-phase-however-corresponding-to-a-negative-lrr-contradicts-my-hypothesis.-this-could-be-due-to-increased-microbial-decomposition-rates-that-offset-carbon-inputs-or-experimental-condition-variations-across-studies.-also-soc-accumulation-is-a-slow-process-that-might-not-be-captured-fully-within-these-experiments." class="section level1">
-<h1>The early phase shows almost no effect. This is quite expected, as
+not? The early phase shows almost no effect. This is quite expected, as
 it takes time for a soil to adjust to new conditions. Therefore the
 mid-phase proved the hypothesis: There is a positive mean LRR, meaning
 that the enhanced CO2 setup has a higher SOC content than the ambient
@@ -424,8 +465,8 @@ conditions. The late phase however, corresponding to a negative LRR,
 contradicts my hypothesis. This could be due to increased microbial
 decomposition rates, that offset carbon inputs or experimental condition
 variations across studies. Also, SOC accumulation is a slow process that
-might not be captured fully within these experiments.</h1>
-</div>
+might not be captured fully within these experiments.</p></li>
+</ul>
 
 
 
