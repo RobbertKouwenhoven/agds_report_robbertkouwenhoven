@@ -1,0 +1,98 @@
+---
+title: "re_stepwise"
+author: "Robbert Kouwenhoven"
+date: "2025-04-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+```
+
+```{r load data}
+half_hourly_fluxes <- readr::read_csv("../raw_data/FLX_CH-Lae_FLUXNET2015_FULLSET_HH_2004-2006.csv")
+half_hourly_fluxes
+tibble::tibble(vars = names(half_hourly_fluxes))
+
+```
+
+```{r clean data}
+clean_fluxes <- half_hourly_fluxes %>%
+  select(GPP_DT = GPP_DT_VUT_REF, TA_F, SW_IN_F, LW_IN_F, VPD_F, PA_F, P_F, WS_F, SWC_F_MDS_1) %>%
+  na.omit()
+clean_fluxes
+```
+
+```{r evaluate bivariate models}
+# Get predictor names
+predictors <- names(clean_fluxes)[names(clean_fluxes) != "GPP_DT"]
+
+# Loop through predictors and fit models
+results <- lapply(predictors, function(var) {
+  formula <- as.formula(paste("GPP_DT ~", var))
+  model <- lm(formula, data = clean_fluxes)
+  data.frame(
+    predictor = var,
+    AIC = AIC(model),
+    R2 = summary(model)$r.squared
+  )
+})
+
+bivariate_models <- do.call(rbind, results)
+
+# Sort by R² or AIC
+bivariate_models <- bivariate_models %>% arrange(AIC)
+```
+
+```{r manually add best predictor each round}
+remaining <- predictors
+selected <- c()
+aic_old <- Inf
+
+repeat {
+  if (length(remaining) == 0) break  # stop if no variables left
+  
+  aic_results <- lapply(remaining, function(var) {
+    current_vars <- c(selected, var)
+    formula <- as.formula(paste("GPP_DT ~", paste(current_vars, collapse = " + ")))
+    model <- lm(formula, data = clean_fluxes)
+    data.frame(var = var, AIC = AIC(model))
+  })
+  
+  aic_df <- do.call(rbind, aic_results)
+  
+  # Defensive programming: skip if AIC results failed
+  if (nrow(aic_df) == 0) break
+  
+  best <- aic_df[which.min(aic_df$AIC), ]
+  
+  if (best$AIC < aic_old) {
+    selected <- c(selected, best$var)
+    remaining <- setdiff(remaining, best$var)
+    aic_old <- best$AIC
+  } else {
+    break
+  }
+}
+
+selected
+
+# Final model
+final_formula <- as.formula(paste("GPP_DT ~", paste(selected, collapse = " + ")))
+final_model <- lm(final_formula, data = clean_fluxes)
+summary(final_model)
+```
+
+```{r visualization}
+ggplot(bivariate_models, aes(x = reorder(predictor, AIC), y = AIC)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Bivariate Model AIC", x = "Predictor", y = "AIC")
+
+```
+
