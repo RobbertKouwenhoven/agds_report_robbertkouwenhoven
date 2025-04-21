@@ -15,7 +15,7 @@ library(ggplot2)
 ```
 
 ```{r load data}
-half_hourly_fluxes <- readr::read_csv("../raw_data/FLX_CH-Lae_FLUXNET2015_FULLSET_HH_2004-2006.csv")
+half_hourly_fluxes <- readr::read_csv("../raw_data/half_hourly_fluxes.csv")
 half_hourly_fluxes
 tibble::tibble(vars = names(half_hourly_fluxes))
 
@@ -23,14 +23,48 @@ tibble::tibble(vars = names(half_hourly_fluxes))
 
 ```{r clean data}
 clean_fluxes <- half_hourly_fluxes %>%
-  select(GPP_DT = GPP_DT_VUT_REF, TA_F, SW_IN_F, LW_IN_F, VPD_F, PA_F, P_F, WS_F, SWC_F_MDS_1, SW_IN_POT, WD, USTAR, RH, PPFD_IN, CO2_F_MDS, TS_F_MDS_1) %>%
   na.omit()
 clean_fluxes
 ```
 
-```{r manually add best predictor each round}
+```{r bivariate models}
+# Get predictor names
+predictors <- names(clean_fluxes)[names(clean_fluxes) != "GPP_NT_VUT_REF"]
+
+# Fit bivariate models and store AIC + R²
+bivariate_results <- lapply(predictors, function(var) {
+  formula <- as.formula(paste("GPP_NT_VUT_REF ~", var))
+  model <- lm(formula, data = clean_fluxes)
+  data.frame(
+    predictor = var,
+    AIC = AIC(model),
+    R2 = summary(model)$r.squared
+  )
+})
+
+# Combine results into a data frame
+bivariate_models <- do.call(rbind, bivariate_results)
+
+# Plot AIC for each bivariate model
+ggplot(bivariate_models, aes(x = reorder(predictor, AIC), y = AIC)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(x = "Predictor", y = "AIC", title = "AIC of Bivariate Models (p = 2)")
+
+# Plot R² for each bivariate model
+ggplot(bivariate_models, aes(x = reorder(predictor, R2), y = R2)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(x = "Predictor", y = expression(R^2), title = "R² of Bivariate Models (p = 2)")
+
+```
+
+Part 1 - bivariate models:
+This script computes a linear regression using two parameters (and hence 1 variable) for all possible combinations ( = number of variables). For every predictor, a linear model is fitted and AIC + R^2 is computed. Both R^2 and AIC are then visualized for every predictor. As can be seen well in the plots, the predictors corresponding to a high AIC have a low R^2 and vice versa - as expected for a single predictor.
+
+```{r manual greedy stepwise forward regression}
 # initial conditions: all predictors are remaining, no predictors are selected, and every new model is better than the current (AIC=infinity)
-predictors <- names(clean_fluxes)[names(clean_fluxes) != "GPP_DT"]
+predictors <- names(clean_fluxes)[names(clean_fluxes) != "GPP_NT_VUT_REF"]
 remaining <- predictors
 selected <- c()
 aic_old <- Inf
@@ -43,7 +77,7 @@ repeat {
   
   aic_results <- lapply(remaining, function(var) {
     current_vars <- c(selected, var)
-    formula <- as.formula(paste("GPP_DT ~", paste(current_vars, collapse = " + ")))
+    formula <- as.formula(paste("GPP_NT_VUT_REF ~", paste(current_vars, collapse = " + ")))
     
     result <- tryCatch({
       model <- lm(formula, data = clean_fluxes)
@@ -102,25 +136,16 @@ Here's how it works:
 
 - Initialization: The set of all candidate predictors is stored in remaining. The vector selected starts empty, and aic_old is initialized with infinity to represent the worst possible AIC.
 
-- Iteration (inside the repeat loop): At each step, the script evaluates all possible models that add one new predictor from remaining to the current set of selected predictors.
-  For each candidate variable:
-    - It builds a new formula by combining the selected variables with the current candidate.
-    - It fits a linear regression model using this formula.
-    - It calculates the AIC of the model and stores the variable name and AIC in a data frame.
-    - Models that fail to fit (due to errors) are skipped using tryCatch().
+- Iterations inside the repeat loop: At each step, the script evaluates all possible models that add one new predictor from remaining to the current set of selected predictors. For each candidate variable it builds a new formula by combining the selected variables with the current candidate. Then it fits a linear regression model using this formula. The AIC of the model is computed and stored the variable name and AIC in a data frame. Models that fail to fit (due to errors) are skipped using tryCatch().
     
-- Model selection: The script identifies the model with the lowest AIC among the candidates. If this new model improves over the previous best AIC (aic_old), it:
-  - Adds the selected variable to the selected list,
-  - Removes it from remaining,
-  - Updates aic_old with the new best AIC,
-  - And logs the current number of parameters and its AIC in aic_trace.
+- Model selection: The script identifies the model with the lowest AIC among the candidates. If this new model improves over the previous best AIC (aic_old), it adds the selected variable to the selected list, removes it from remaining, updates aic_old with the new best AIC, and logs the current number of parameters and its AIC in aic_trace.
   
 - Stopping criterion: If no improvement in AIC is found (i.e. adding more predictors makes the model worse), the loop stops.
 
-The model with the lowest AIC and its corresponding variables are considered the final (presumably optimal) model.
+The model with the lowest AIC and its corresponding variables is considered the final (presumably optimal) model.
 
+Printed is for every loop with parameters p what the R^2 and AIC would be with the addition of this new variable from 'remaining'.
 
-The repeat loop first checks if there are any predictors left. It keeps on trying to improve the model by adding another predictor. Then, for every remaining variable, the script creates a new model formula by adding the new variable to the already existing set of predictors, it fits a linear regression, calculates the AIC of that model and finally stores the results - i.e. the fit + the AIC - in a data frame called aic_df. After that, the code finds the best result (minimum AIC). If this new best model is better than the previous one, the predictor is moved from 'remaining' to 'selected' as long as the newer models keep on improving. If it no longer does this, we've found the best model and the loop is stopped.
 
 ```{r visualization + final model}
 # Plot
@@ -133,9 +158,9 @@ ggplot(aic_trace, aes(x = p, y = AIC)) +
   theme_minimal()
 
 # Final model
-final_formula <- as.formula(paste("GPP_DT ~", paste(selected, collapse = " + ")))
+final_formula <- as.formula(paste("GPP_NT_VUT_REF ~", paste(selected, collapse = " + ")))
 final_model <- lm(final_formula, data = clean_fluxes)
 summary(final_model)
 
 ```
-
+In the end, only 3 variables out of half_hourly_fluxes are not used. Apparently even using variables like side_ID is able to improve the model. This indicates that there are differences in behaviour of GPP depending on the site, which is not represented in other variables in half_hourly_fluxes. The only variables that won't improve the models performance are the air temperature TA_F and the gapfilled versions of both incoming longwave and shortwave radiation. Note that the not-gapfilled variables LW_IN_F and SW_IN_F are included.
