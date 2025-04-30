@@ -1,0 +1,187 @@
+---
+title: "re_ml_02"
+author: "Robbert Kouwenhoven"
+date: "2025-04-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages,  include = FALSE}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(caret)
+library(recipes)
+library(knitr)
+```
+
+```{r load and preprocess data}
+daily_Dav_fluxes <- read_csv("../raw_data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv") |>  
+  
+  # select only the variables we are interested in
+  dplyr::select(TIMESTAMP,
+                GPP_NT_VUT_REF,    # the target
+                ends_with("_QC"),  # quality control info
+                ends_with("_F"),   # includes all all meteorological covariates
+                -contains("JSB")   # weird useless variable
+                ) |>
+
+  # convert to a nice date object, although not needed later on
+  dplyr::mutate(TIMESTAMP = lubridate::ymd(TIMESTAMP)) |>
+
+  # set all -9999 to NA
+  mutate(across(where(is.numeric), ~na_if(., -9999))) |> 
+  
+  # retain only data based on >=80% good-quality measurements
+  # overwrite bad data with NA (not dropping rows)
+  dplyr::mutate(GPP_NT_VUT_REF = ifelse(NEE_VUT_REF_QC < 0.8, NA, GPP_NT_VUT_REF),
+                TA_F           = ifelse(TA_F_QC        < 0.8, NA, TA_F),
+                SW_IN_F        = ifelse(SW_IN_F_QC     < 0.8, NA, SW_IN_F),
+                LW_IN_F        = ifelse(LW_IN_F_QC     < 0.8, NA, LW_IN_F),
+                VPD_F          = ifelse(VPD_F_QC       < 0.8, NA, VPD_F),
+                PA_F           = ifelse(PA_F_QC        < 0.8, NA, PA_F),
+                P_F            = ifelse(P_F_QC         < 0.8, NA, P_F),
+                WS_F           = ifelse(WS_F_QC        < 0.8, NA, WS_F)) |> 
+
+  # drop QC variables (no longer needed)
+  dplyr::select(-ends_with("_QC"))
+
+## ... and do the exact same thing for the site at Laegern
+daily_Lae_fluxes <- read_csv("../raw_data/FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv") |>  
+  
+  # select only the variables we are interested in
+  dplyr::select(TIMESTAMP,
+                GPP_NT_VUT_REF,    # the target
+                ends_with("_QC"),  # quality control info
+                ends_with("_F"),   # includes all all meteorological covariates
+                -contains("JSB")   # weird useless variable
+                ) |>
+
+  # convert to a nice date object, although not needed later on
+  dplyr::mutate(TIMESTAMP = lubridate::ymd(TIMESTAMP)) |>
+
+  # set all -9999 to NA
+  mutate(across(where(is.numeric), ~na_if(., -9999))) |> 
+  
+  # retain only data based on >=80% good-quality measurements
+  # overwrite bad data with NA (not dropping rows)
+  dplyr::mutate(GPP_NT_VUT_REF = ifelse(NEE_VUT_REF_QC < 0.8, NA, GPP_NT_VUT_REF),
+                TA_F           = ifelse(TA_F_QC        < 0.8, NA, TA_F),
+                SW_IN_F        = ifelse(SW_IN_F_QC     < 0.8, NA, SW_IN_F),
+                LW_IN_F        = ifelse(LW_IN_F_QC     < 0.8, NA, LW_IN_F),
+                VPD_F          = ifelse(VPD_F_QC       < 0.8, NA, VPD_F),
+                PA_F           = ifelse(PA_F_QC        < 0.8, NA, PA_F),
+                P_F            = ifelse(P_F_QC         < 0.8, NA, P_F),
+                WS_F           = ifelse(WS_F_QC        < 0.8, NA, WS_F)) |> 
+
+  # drop QC variables (no longer needed)
+  dplyr::select(-ends_with("_QC")) 
+```
+
+# Information regarding the sites:
+
+- Davos: elevation = 1639m above sea level. It's climate is Köppen-classified as ET (tundra). On average (yearly), the temperature in Davos is 2.8 degrees Celsius with 1062 mm of precipitation. The vegetation is dominated by evergreen needleleaf forests.
+- Laegern: elevation = 689m above sea level. It's climate not specified, but I assume it to have a continental climate (Dfb). On average (yearly), the temperature in Laegern is 8.3 degrees Celsius with 1100 mm of precipitation. The vegetation consists of mixes forests.
+
+--> Davos has a much higher altitude and therefore on average a colder climate, which also leads to different vegetation types. They receive similar amounts of precipitation.
+
+```{r inspect data, include=FALSE}
+daily_Dav_fluxes
+
+colnames(daily_Dav_fluxes)
+colnames(daily_Lae_fluxes)
+
+```
+
+```{r Function to split / train / test KNN models}
+set.seed(42) # for reproducibility
+
+# Define the predictors -> removed P_F due to missing too many values in Lae
+predictors <- c("TA_F", "SW_IN_F", "LW_IN_F", "VPD_F", "PA_F", "WS_F")
+
+# Function to split, train, and test KNN models
+train_and_evaluate <- function(train_data, test_data_list, site_name) {
+  # Remove rows with any NANs
+  train_data <- train_data |> drop_na(all_of(c("GPP_NT_VUT_REF", predictors)))
+
+  # Split into 80% train and 20% test
+  train_index <- createDataPartition(train_data$GPP_NT_VUT_REF, p = 0.8, list = FALSE)
+  train_set <- train_data[train_index, ]
+  test_set <- train_data[-train_index, ]
+
+  # Train model with cross-validation and tuning of k
+  ctrl <- trainControl(method = "cv", number = 10)
+  model <- train(
+    GPP_NT_VUT_REF ~ .,
+    data = train_set |> dplyr::select(GPP_NT_VUT_REF, all_of(predictors)),
+    method = "knn",
+    trControl = ctrl,
+    metric = "RMSE",
+    tuneLength = 10
+  )
+
+  # Predict on all test sets
+  results <- lapply(test_data_list, function(df) {
+    df <- df |> drop_na(all_of(c("GPP_NT_VUT_REF", predictors)))
+    preds <- predict(model, newdata = df |> select(all_of(predictors)))
+
+    tibble(
+      R2 = R2(preds, df$GPP_NT_VUT_REF),
+      RMSE = RMSE(preds, df$GPP_NT_VUT_REF),
+      MAE = MAE(preds, df$GPP_NT_VUT_REF)
+    )
+  })
+  # Name results based on test set
+  names(results) <- names(test_data_list)
+
+  # Combine results into a single data frame
+  bind_rows(results, .id = "Test_Set") |> 
+    mutate(Train_Set = site_name) |> 
+    relocate(Train_Set, Test_Set)
+}
+```
+
+```{r Prepare data lists, execute functions}
+# Coerce predictors to numeric type explicitly for all datasets
+coerce_to_numeric <- function(df, predictors) {
+  df |> mutate(across(all_of(predictors), ~ as.numeric(.)))
+}
+
+davos_data <- daily_Dav_fluxes |> select(GPP_NT_VUT_REF, all_of(predictors)) |> coerce_to_numeric(predictors)
+lae_data   <- daily_Lae_fluxes |> select(GPP_NT_VUT_REF, all_of(predictors))   |> coerce_to_numeric(predictors)
+both_data  <- bind_rows(daily_Dav_fluxes, daily_Lae_fluxes) |> 
+              select(GPP_NT_VUT_REF, all_of(predictors))     |> coerce_to_numeric(predictors)
+
+# Train on each and evaluate on all - 3 results DFs consisting each of 3 test sets --> results in 9 rows
+results_dav <- train_and_evaluate(davos_data, list(Davos = davos_data, Laegern = lae_data, Both = both_data), "Davos")
+results_lae <- train_and_evaluate(lae_data, list(Davos = davos_data, Laegern = lae_data, Both = both_data), "Laegern")
+results_both <- train_and_evaluate(both_data, list(Davos = davos_data, Laegern = lae_data, Both = both_data), "Both")
+
+```
+
+```{r Results in table}
+# Combine all results into one table
+final_results <- bind_rows(results_dav, results_lae, results_both)
+kable(final_results, digits = 3, caption = "KNN Model Performance Across Sites")
+```
+## Questions:
+# Q1: What are the patterns that you see in the tables?
+The performance is best if the model is tested on the same site it is trained on (Laegern on Laegern, Davos on Davos).
+The performance drops on cross-sites (Laegern->Davos and vice versa). R^2 drops from 0.68-0.70 to 0.58. 
+If the model is trained on both sites, the performance never reaches the same 'height' as a model trained on a single site, but the performance remains stable when tested on a different set (0.69-0.71).
+
+# Q2: How well do models trained on one site perform on another site? Why is this the case?
+When a model trained on one site is tested on the other, performance declines. A Davos-trained model evaluated on Laegern data achieves a lower R² of 0.58 and a substantially higher RMSE of 3.30. Similarly, a Laegern-trained model performs worse when applied to Davos. This drop in generalization suggests that the environmental and ecological characteristics of the two sites differ in ways that affect the predictors’ relationship with GPP. Davos, being an alpine site at higher elevation, experiences colder temperatures, higher radiation variability, and longer snow cover duration. Laegern, on the other hand, is a lower-altitude mixed forest in a more temperate zone. These differences influence variables like temperature, vapor pressure deficit, and incoming radiation, all of which strongly affect GPP and are used as predictors in the model. As a result, a model trained exclusively on one site fails to capture the full range of behavior observed at the other, leading to site-specific prediction bias.
+
+To be able to understand this - maybe counterintuitive - reasoning, you could think of the following:
+At Davos (a high-elevation coniferous forest), photosynthesis may saturate at a lower temperature than in Laegern (a lower-elevation mixed forest), due to physiological adaptations of different vegetation types. Therefore, a model trained on Laegern - with higher temperatures - might not be able to capture Davos' fotosynthesis behaviour well at higher temperatures.
+
+# Q3: How does the model trained on both sites perform on the three test sets? Why is this the case?
+Whether tested on Davos, Laegern, or the mixed dataset, the R² hovers around 0.69 to 0.71, and the error metrics remain relatively low. This outcome suggests that including data from both sites during training allows the model to generalize better. Exposure to a wider range of climatic and ecological conditions helps the model learn more robust patterns in the predictors’ relationship with GPP. Rather than overfitting to the peculiarities of a single site, the model trained on both can interpolate across a broader spectrum of input conditions, which leads to improved overall performance.
+
+# Q4: When training and testing on both sites, is this a true ‘out-of-sample’ setup? What would you expect if your model was tested against data from a site in Spain?
+No, although individual observations in the test set are unseen during training, the overall data distribution is familiar, since it includes the same sites. The model still benefits from having encountered similar conditions during training. If you were to evaluate this model on data from a completely new site — for example, a Mediterranean site in Spain — you could expect a drop in performance. The new site would likely feature different ranges in temperature, vapor pressure deficit, radiation, and seasonal dynamics, some of which may not have been represented in the training data. The model could then extrapolate poorly, particularly if predictor values fall outside the range it has learned.
